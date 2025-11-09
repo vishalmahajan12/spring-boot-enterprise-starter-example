@@ -1,0 +1,13 @@
+com/yourcompany/starter/util/CorrelationIdUtilTest.class
+com/yourcompany/starter/integration/TestApplication.class
+com/yourcompany/starter/service/MetricsServiceTest.class
+com/yourcompany/starter/service/RateLimitingServiceTest.class
+com/yourcompany/starter/util/JwtUtilTest.class
+com/yourcompany/starter/filter/RequestLoggingFilterTest.class
+com/yourcompany/starter/util/MaskingUtilTest.class
+com/yourcompany/starter/filter/AuthenticationFilterTest.class
+com/yourcompany/starter/integration/EnterpriseStarterIntegrationTest.class
+com/yourcompany/starter/interceptor/OutgoingRequestLoggingInterceptorTest.class
+com/yourcompany/starter/config/EnterpriseStarterAutoConfigurationTest.class
+com/yourcompany/starter/service/AuthServiceTest.class
+com/yourcompany/starter/integration/TestApplication$TestController.class

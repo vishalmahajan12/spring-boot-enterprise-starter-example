@@ -1,0 +1,10 @@
+com/yourcompany/sample/controller/AuthController$LoginRequest.class
+com/yourcompany/sample/controller/AuthController.class
+com/yourcompany/sample/SampleServiceApplication.class
+com/yourcompany/sample/controller/UserController.class
+com/yourcompany/sample/controller/PublicController.class
+com/yourcompany/sample/controller/UserController$CreateUserRequest.class
+com/yourcompany/sample/controller/DemoController.class
+com/yourcompany/sample/controller/UserController$User.class
+com/yourcompany/sample/service/ExternalServiceClient.class
+com/yourcompany/sample/controller/AdminController.class

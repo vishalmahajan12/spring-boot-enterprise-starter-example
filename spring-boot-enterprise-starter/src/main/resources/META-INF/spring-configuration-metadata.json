@@ -1,0 +1,133 @@
+{
+  "groups": [
+    {
+      "name": "enterprise.starter",
+      "type": "com.yourcompany.starter.config.EnterpriseStarterProperties",
+      "description": "Enterprise Starter configuration properties"
+    },
+    {
+      "name": "enterprise.starter.logging",
+      "type": "com.yourcompany.starter.config.EnterpriseStarterProperties$Logging",
+      "description": "Logging configuration for request/response logging"
+    },
+    {
+      "name": "enterprise.starter.authentication",
+      "type": "com.yourcompany.starter.config.EnterpriseStarterProperties$Authentication",
+      "description": "Authentication configuration"
+    },
+    {
+      "name": "enterprise.starter.swagger",
+      "type": "com.yourcompany.starter.config.EnterpriseStarterProperties$Swagger",
+      "description": "Swagger/OpenAPI configuration"
+    },
+    {
+      "name": "enterprise.starter.monitoring",
+      "type": "com.yourcompany.starter.config.EnterpriseStarterProperties$Monitoring",
+      "description": "Monitoring and metrics configuration"
+    }
+  ],
+  "properties": [
+    {
+      "name": "enterprise.starter.logging.enabled",
+      "type": "java.lang.Boolean",
+      "defaultValue": true,
+      "description": "Enable request/response logging"
+    },
+    {
+      "name": "enterprise.starter.logging.level",
+      "type": "java.lang.String",
+      "defaultValue": "INFO",
+      "description": "Logging level (DEBUG, INFO, WARN, ERROR)"
+    },
+    {
+      "name": "enterprise.starter.logging.log-request",
+      "type": "java.lang.Boolean",
+      "defaultValue": true,
+      "description": "Log incoming requests"
+    },
+    {
+      "name": "enterprise.starter.logging.log-response",
+      "type": "java.lang.Boolean",
+      "defaultValue": true,
+      "description": "Log outgoing responses"
+    },
+    {
+      "name": "enterprise.starter.logging.mask-sensitive-data",
+      "type": "java.lang.Boolean",
+      "defaultValue": true,
+      "description": "Mask sensitive data in logs (passwords, tokens, etc.)"
+    },
+    {
+      "name": "enterprise.starter.logging.correlation-id-header",
+      "type": "java.lang.String",
+      "defaultValue": "X-Correlation-ID",
+      "description": "Header name for correlation ID"
+    },
+    {
+      "name": "enterprise.starter.authentication.enabled",
+      "type": "java.lang.Boolean",
+      "defaultValue": false,
+      "description": "Enable authentication"
+    },
+    {
+      "name": "enterprise.starter.authentication.type",
+      "type": "com.yourcompany.starter.config.EnterpriseStarterProperties$Authentication$AuthType",
+      "defaultValue": "JWT",
+      "description": "Authentication type: JWT, OAUTH2, API_KEY, BASIC, CUSTOM"
+    },
+    {
+      "name": "enterprise.starter.authentication.secret-key",
+      "type": "java.lang.String",
+      "description": "Secret key for JWT token validation"
+    },
+    {
+      "name": "enterprise.starter.authentication.enable-rate-limiting",
+      "type": "java.lang.Boolean",
+      "defaultValue": false,
+      "description": "Enable rate limiting"
+    },
+    {
+      "name": "enterprise.starter.authentication.rate-limit-per-minute",
+      "type": "java.lang.Integer",
+      "defaultValue": 100,
+      "description": "Rate limit per minute per IP/user"
+    },
+    {
+      "name": "enterprise.starter.swagger.enabled",
+      "type": "java.lang.Boolean",
+      "defaultValue": true,
+      "description": "Enable Swagger/OpenAPI documentation"
+    },
+    {
+      "name": "enterprise.starter.swagger.title",
+      "type": "java.lang.String",
+      "defaultValue": "API Documentation",
+      "description": "API documentation title"
+    },
+    {
+      "name": "enterprise.starter.swagger.version",
+      "type": "java.lang.String",
+      "defaultValue": "1.0.0",
+      "description": "API version"
+    },
+    {
+      "name": "enterprise.starter.monitoring.enabled",
+      "type": "java.lang.Boolean",
+      "defaultValue": true,
+      "description": "Enable monitoring and metrics"
+    },
+    {
+      "name": "enterprise.starter.monitoring.enable-metrics",
+      "type": "java.lang.Boolean",
+      "defaultValue": true,
+      "description": "Enable Micrometer metrics"
+    },
+    {
+      "name": "enterprise.starter.monitoring.expose-prometheus",
+      "type": "java.lang.Boolean",
+      "defaultValue": true,
+      "description": "Expose Prometheus metrics endpoint"
+    }
+  ]
+}
+
