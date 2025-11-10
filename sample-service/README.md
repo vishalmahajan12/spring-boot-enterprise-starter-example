@@ -13,12 +13,14 @@ This is a sample Spring Boot service that demonstrates all features of the Enter
 - ✅ Rate Limiting
 - ✅ Performance Monitoring
 - ✅ Error Tracking
+- ✅ **Multi-Level Caching** (Caffeine L1 + Redis L2)
 
 ## Prerequisites
 
 1. Java 17+
 2. Maven 3.6+
 3. Enterprise Starter library built and installed in local Maven repository
+4. **Redis** (optional, for distributed caching) - See [Redis Setup](#redis-setup) section
 
 ## Building the Enterprise Starter
 
@@ -191,6 +193,103 @@ curl http://localhost:8080/actuator/metrics
 curl http://localhost:8080/actuator/prometheus
 ```
 
+### 13. Multi-Level Caching
+
+The sample service demonstrates multi-level caching with Caffeine (L1) and optional Redis (L2).
+
+#### Test Caching (Caffeine Only)
+
+```bash
+# First call - slow (cache miss, fetches from source)
+curl "http://localhost:8080/api/demo/cache/config?key=test1"
+
+# Second call - fast (cache hit from L1 - Caffeine)
+curl "http://localhost:8080/api/demo/cache/config?key=test1"
+
+# Notice the durationMs difference - second call should be much faster
+```
+
+#### Test Cache Operations
+
+```bash
+# Cache user data
+curl "http://localhost:8080/api/demo/cache/user?id=1"
+
+# Update cache
+curl -X PUT "http://localhost:8080/api/demo/cache/config?key=test1&value=updated"
+
+# Evict specific cache entry
+curl -X DELETE "http://localhost:8080/api/demo/cache/config?key=test1"
+
+# Clear entire cache
+curl -X POST "http://localhost:8080/api/demo/cache/config/clear"
+
+# Cache API responses
+curl "http://localhost:8080/api/demo/cache/api-response?endpoint=/api/test"
+
+# Compare with uncached endpoint
+curl "http://localhost:8080/api/demo/cache/uncached?key=test1"
+```
+
+#### Enable Redis for Distributed Caching
+
+1. **Add Redis dependency** to `pom.xml`:
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-data-redis</artifactId>
+</dependency>
+```
+
+2. **Start Redis** (using Docker):
+```bash
+docker run -d --name redis-test -p 6379:6379 redis:latest
+```
+
+3. **Enable Redis** in `application.yml`:
+```yaml
+enterprise:
+  starter:
+    cache:
+      redis-enabled: true  # Change from false to true
+
+spring:
+  data:
+    redis:
+      host: localhost
+      port: 6379
+```
+
+4. **Test Redis caching**:
+```bash
+# First call - stores in both L1 and L2
+curl "http://localhost:8080/api/demo/cache/config?key=test1"
+
+# Check Redis keys
+redis-cli KEYS "*"
+
+# Get cached value from Redis
+redis-cli GET "config::test1"
+```
+
+#### Verify Cache Managers
+
+Check which cache managers are active:
+```bash
+# If you add the cache info endpoint (see below)
+curl http://localhost:8080/api/cache/info
+```
+
+Expected response with Redis enabled:
+```json
+{
+  "caffeineAvailable": true,
+  "redisAvailable": true,
+  "compositeAvailable": true,
+  "activeCacheManager": "composite"
+}
+```
+
 ## API Endpoints
 
 ### Public Endpoints (No Auth)
@@ -219,6 +318,15 @@ curl http://localhost:8080/actuator/prometheus
 - `GET /api/demo/error` - Test error tracking
 - `GET /api/demo/rate-limit` - Test rate limiting
 
+### Cache Endpoints (Multi-Level Caching)
+- `GET /api/demo/cache/config?key=xxx` - Test cached config (with timing)
+- `GET /api/demo/cache/user?id=xxx` - Test cached user data
+- `PUT /api/demo/cache/config?key=xxx&value=yyy` - Update cache
+- `DELETE /api/demo/cache/config?key=xxx` - Evict from cache
+- `POST /api/demo/cache/config/clear` - Clear all cache entries
+- `GET /api/demo/cache/api-response?endpoint=xxx` - Cache API responses
+- `GET /api/demo/cache/uncached?key=xxx` - Compare with uncached endpoint
+
 ## Configuration
 
 All configuration is in `src/main/resources/application.yml`. Key settings:
@@ -227,6 +335,103 @@ All configuration is in `src/main/resources/application.yml`. Key settings:
 - **Authentication**: JWT (can be changed to API_KEY or BASIC)
 - **Rate Limiting**: 10 requests per minute (low for testing)
 - **Monitoring**: Enabled with Prometheus export
+- **Caching**: 
+  - Caffeine (L1): Enabled by default - fast local cache
+  - Redis (L2): Optional - distributed cache (set `redis-enabled: true`)
+
+### Cache Configuration
+
+```yaml
+enterprise:
+  starter:
+    cache:
+      enabled: true
+      # Caffeine (L1) - Fast local cache
+      caffeine-max-size: 10000
+      caffeine-ttl-seconds: 300  # 5 minutes
+      caffeine-access-expiration-seconds: 180  # 3 minutes
+      # Redis (L2) - Distributed cache (optional)
+      redis-enabled: false  # Set to true if Redis is available
+      redis-ttl-seconds: 3600  # 1 hour
+      cache-names:
+        - default
+        - users
+        - config
+        - tokens
+        - api-responses
+
+spring:
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 2000ms
+```
+
+## Redis Setup
+
+### Option 1: Docker (Recommended)
+
+```bash
+# Start Redis container
+docker run -d --name redis-test -p 6379:6379 redis:latest
+
+# Verify Redis is running
+docker ps | grep redis
+
+# Test Redis connection
+docker exec -it redis-test redis-cli ping
+# Should return: PONG
+```
+
+### Option 2: Local Installation
+
+**Ubuntu/Debian:**
+```bash
+sudo apt-get update
+sudo apt-get install redis-server
+sudo systemctl start redis
+```
+
+**macOS:**
+```bash
+brew install redis
+brew services start redis
+```
+
+### Verify Redis Connection
+
+```bash
+# Using redis-cli
+redis-cli ping
+# Should return: PONG
+
+# Monitor Redis commands
+redis-cli MONITOR
+```
+
+### Testing Redis Caching
+
+1. **Enable Redis** in `application.yml`:
+   ```yaml
+   enterprise:
+     starter:
+       cache:
+         redis-enabled: true
+   ```
+
+2. **Start the application** and make cache calls
+
+3. **Check Redis keys**:
+   ```bash
+   redis-cli KEYS "*"
+   # Should show cache keys like: "config::test1", "users::1"
+   ```
+
+4. **Verify multi-level caching**:
+   - First call: Slow (fetches from source, stores in L1 and L2)
+   - Second call: Fast (hits L1 - Caffeine)
+   - After L1 expires: Still fast (hits L2 - Redis)
 
 ## Testing Checklist
 
@@ -244,6 +449,10 @@ All configuration is in `src/main/resources/application.yml`. Key settings:
 - [ ] Swagger UI displays API documentation
 - [ ] Prometheus metrics are available
 - [ ] Circuit breaker protects external calls
+- [ ] **Caching works** - First call slow, subsequent calls fast
+- [ ] **Cache eviction works** - Cache cleared after evict call
+- [ ] **Redis caching works** (if Redis enabled) - Keys visible in Redis
+- [ ] **Multi-level cache** - L1 (Caffeine) and L2 (Redis) both working
 
 ## Troubleshooting
 
@@ -273,11 +482,65 @@ mvn clean install
 - Check `enterprise.starter.swagger.enabled: true`
 - Access at `http://localhost:8080/swagger-ui.html`
 
+### Issue: Redis cache not working
+
+**Solution**:
+- Verify Redis is running: `redis-cli ping`
+- Check `redis-enabled: true` in configuration
+- Verify `spring-boot-starter-data-redis` dependency is added
+- Check Redis connection settings in `application.yml`
+- Review application logs for Redis connection errors
+
+### Issue: Cache not improving performance
+
+**Solution**:
+- Verify `enterprise.starter.cache.enabled: true`
+- Check cache annotations (`@Cacheable`) are present on methods
+- Verify cache names match configuration
+- Test with multiple calls to see cache hit improvement
+
+## Cache Examples
+
+### Example 1: Basic Caching
+
+```java
+@Service
+public class UserService {
+    @Cacheable(value = "users", key = "#id")
+    public User getUser(Long id) {
+        // This will be cached after first call
+        return userRepository.findById(id);
+    }
+}
+```
+
+### Example 2: Cache Update
+
+```java
+@CachePut(value = "users", key = "#user.id")
+public User updateUser(User user) {
+    // Cache is automatically updated
+    return userRepository.save(user);
+}
+```
+
+### Example 3: Cache Eviction
+
+```java
+@CacheEvict(value = "users", key = "#id")
+public void deleteUser(Long id) {
+    // Cache entry is removed
+    userRepository.deleteById(id);
+}
+```
+
 ## Next Steps
 
 1. Experiment with different authentication types
 2. Test resilience patterns with external services
 3. Monitor metrics in Prometheus
-4. Adjust configuration based on your needs
-5. Integrate with your own services
+4. **Enable Redis** for distributed caching across instances
+5. **Test multi-level caching** - Compare L1 vs L2 performance
+6. Adjust cache TTL and size based on your needs
+7. Integrate with your own services
 

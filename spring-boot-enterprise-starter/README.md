@@ -51,6 +51,13 @@ A comprehensive Spring Boot starter library that provides enterprise-grade featu
   - Retry mechanism with exponential backoff
   - Configurable timeouts
 
+- **Multi-Level Caching**
+  - Caffeine cache (L1) - Fast local in-memory cache
+  - Redis cache (L2) - Distributed cache (optional)
+  - Composite cache manager for multi-level caching
+  - Configurable TTL and size limits
+  - Spring Cache abstraction support
+
 - **Cross-Cutting Concerns**
   - Global exception handling
   - Correlation ID propagation
@@ -298,6 +305,66 @@ enterprise:
 - Retries on: All exceptions
 
 **Note**: These defaults are configured in `ResilienceConfig`. For custom configurations, create your own `CircuitBreakerRegistry` and `RetryRegistry` beans.
+
+### Cache Configuration
+
+```yaml
+enterprise:
+  starter:
+    cache:
+      enabled: true
+      # Caffeine (L1) Configuration - Fast local cache
+      caffeine-max-size: 10000
+      caffeine-ttl-seconds: 300  # 5 minutes
+      caffeine-access-expiration-seconds: 180  # 3 minutes
+      # Redis (L2) Configuration - Distributed cache (optional)
+      redis-enabled: true
+      redis-ttl-seconds: 3600  # 1 hour
+      cache-names:
+        - default
+        - users
+        - config
+        - tokens
+        - api-responses
+
+# Redis Configuration (if using Redis)
+spring:
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 2000ms
+  cache:
+    type: none  # Set to none when using CompositeCacheManager
+```
+
+**Multi-Level Caching Architecture:**
+- **L1 Cache (Caffeine)**: Ultra-fast local in-memory cache (sub-millisecond access)
+- **L2 Cache (Redis)**: Distributed cache shared across instances (optional)
+- **Composite Cache Manager**: Automatically checks L1 first, then L2, then source
+
+**Benefits:**
+- Ultra-fast access with Caffeine
+- Distributed caching with Redis
+- Fallback resilience (works even if Redis is unavailable)
+- Reduced load on Redis with local cache hits
+
+**Usage Example:**
+```java
+@Service
+public class UserService {
+    @Cacheable(value = "users", key = "#id")
+    public User getUser(Long id) {
+        // Automatically uses L1 (Caffeine) first, then L2 (Redis)
+        return userRepository.findById(id);
+    }
+    
+    @CacheEvict(value = "users", key = "#id")
+    public void evictUser(Long id) {
+        // Evicts from both L1 and L2
+    }
+}
+```
 
 ## Features in Detail
 
@@ -802,7 +869,79 @@ public class ResilientService {
 }
 ```
 
-### Example 5: Performance Monitoring
+### Example 5: Multi-Level Caching
+
+```java
+@Service
+public class UserService {
+    
+    /**
+     * Cache user data - automatically uses L1 (Caffeine) first, then L2 (Redis)
+     */
+    @Cacheable(value = "users", key = "#id")
+    public User getUser(Long id) {
+        // This will:
+        // 1. Check Caffeine cache (L1) - fastest
+        // 2. If miss, check Redis cache (L2)
+        // 3. If miss, execute method and store in both
+        return userRepository.findById(id);
+    }
+    
+    /**
+     * Update cache when user is updated
+     */
+    @CachePut(value = "users", key = "#user.id")
+    public User updateUser(User user) {
+        // Updates both L1 and L2 caches
+        return userRepository.save(user);
+    }
+    
+    /**
+     * Remove from cache when user is deleted
+     */
+    @CacheEvict(value = "users", key = "#id")
+    public void deleteUser(Long id) {
+        // Evicts from both L1 and L2
+        userRepository.deleteById(id);
+    }
+    
+    /**
+     * Clear entire cache
+     */
+    @CacheEvict(value = "users", allEntries = true)
+    public void clearUserCache() {
+        // Clears both L1 and L2
+    }
+}
+
+// Using only Caffeine (L1) for very fast, local-only cache
+@Service
+public class LocalCacheService {
+    @Cacheable(value = "local-data", cacheManager = "caffeineCacheManager", key = "#id")
+    public String getLocalData(String id) {
+        return expensiveComputation(id);
+    }
+}
+
+// Using only Redis (L2) for distributed cache
+@Service
+public class DistributedCacheService {
+    @Cacheable(value = "shared-data", cacheManager = "redisCacheManager", key = "#id")
+    public String getSharedData(String id) {
+        return fetchFromDatabase(id);
+    }
+}
+```
+
+**Caching Details:**
+- **Default Behavior**: Uses composite cache manager (L1 + L2)
+- **Cache Annotations**: `@Cacheable`, `@CachePut`, `@CacheEvict`
+- **Cache Managers**: 
+  - `caffeineCacheManager` - L1 only
+  - `redisCacheManager` - L2 only (if Redis enabled)
+  - Default - Composite (L1 + L2)
+
+### Example 6: Performance Monitoring
 
 ```java
 @Service

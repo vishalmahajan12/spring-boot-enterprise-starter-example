@@ -3,7 +3,6 @@ package com.yourcompany.starter.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
-import jakarta.validation.constraints.NotBlank;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -30,6 +29,7 @@ public class EnterpriseStarterProperties {
     private Authentication authentication = new Authentication();
     private Swagger swagger = new Swagger();
     private Monitoring monitoring = new Monitoring();
+    private Cache cache = new Cache();
 
     // Getters and Setters
     public Logging getLogging() { return logging; }
@@ -40,6 +40,8 @@ public class EnterpriseStarterProperties {
     public void setSwagger(Swagger swagger) { this.swagger = swagger; }
     public Monitoring getMonitoring() { return monitoring; }
     public void setMonitoring(Monitoring monitoring) { this.monitoring = monitoring; }
+    public Cache getCache() { return cache; }
+    public void setCache(Cache cache) { this.cache = cache; }
 
     /**
      * Logging configuration properties.
@@ -266,6 +268,51 @@ public class EnterpriseStarterProperties {
         public void setExposePrometheus(boolean exposePrometheus) { this.exposePrometheus = exposePrometheus; }
         public String getMetricsPath() { return metricsPath; }
         public void setMetricsPath(String metricsPath) { this.metricsPath = metricsPath; }
+    }
+
+    /**
+     * Cache configuration properties.
+     * Supports multi-level caching with Caffeine (L1) and Redis (L2).
+     * Controls caching behavior, TTL, size limits, etc.
+     */
+    public static class Cache {
+        private boolean enabled = false;
+        
+        // Caffeine (L1) Configuration - Fast local in-memory cache
+        private long caffeineMaxSize = 10000;
+        private long caffeineTtlSeconds = 300; // 5 minutes - shorter for L1
+        private long caffeineAccessExpirationSeconds = 180; // 3 minutes
+        
+        // Redis (L2) Configuration - Distributed cache
+        private boolean redisEnabled = true;
+        private long redisTtlSeconds = 3600; // 1 hour - longer for L2
+        
+        // Cache names
+        private List<String> cacheNames = List.of("default", "users", "config", "tokens", "api-responses");
+
+        // Getters and Setters
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        
+        public long getCaffeineMaxSize() { return caffeineMaxSize; }
+        public void setCaffeineMaxSize(long caffeineMaxSize) { this.caffeineMaxSize = caffeineMaxSize; }
+        
+        public long getCaffeineTtlSeconds() { return caffeineTtlSeconds; }
+        public void setCaffeineTtlSeconds(long caffeineTtlSeconds) { this.caffeineTtlSeconds = caffeineTtlSeconds; }
+        
+        public long getCaffeineAccessExpirationSeconds() { return caffeineAccessExpirationSeconds; }
+        public void setCaffeineAccessExpirationSeconds(long caffeineAccessExpirationSeconds) {
+            this.caffeineAccessExpirationSeconds = caffeineAccessExpirationSeconds;
+        }
+        
+        public boolean isRedisEnabled() { return redisEnabled; }
+        public void setRedisEnabled(boolean redisEnabled) { this.redisEnabled = redisEnabled; }
+        
+        public long getRedisTtlSeconds() { return redisTtlSeconds; }
+        public void setRedisTtlSeconds(long redisTtlSeconds) { this.redisTtlSeconds = redisTtlSeconds; }
+        
+        public List<String> getCacheNames() { return cacheNames; }
+        public void setCacheNames(List<String> cacheNames) { this.cacheNames = cacheNames; }
     }
 }
 
