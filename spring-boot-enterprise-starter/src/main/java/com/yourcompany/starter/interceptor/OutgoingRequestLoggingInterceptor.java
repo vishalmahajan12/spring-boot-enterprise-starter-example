@@ -7,6 +7,7 @@ import com.yourcompany.starter.util.CorrelationIdUtil;
 import com.yourcompany.starter.util.MaskingUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.http.HttpRequest;
 import org.springframework.http.client.ClientHttpRequestExecution;
 import org.springframework.http.client.ClientHttpRequestInterceptor;
@@ -14,10 +15,13 @@ import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StreamUtils;
 
+import jakarta.annotation.PreDestroy;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * Interceptor for logging outgoing HTTP requests made by RestTemplate/WebClient.
@@ -36,10 +40,31 @@ public class OutgoingRequestLoggingInterceptor implements ClientHttpRequestInter
     private static final Logger logger = LoggerFactory.getLogger(OutgoingRequestLoggingInterceptor.class);
     private final EnterpriseStarterProperties properties;
     private final ObjectMapper objectMapper;
+    private final ExecutorService asyncLoggingExecutor;
 
     public OutgoingRequestLoggingInterceptor(EnterpriseStarterProperties properties, ObjectMapper objectMapper) {
         this.properties = properties;
         this.objectMapper = objectMapper;
+        // Create executor service for async logging if enabled
+        if (properties.getLogging().isAsyncLogging()) {
+            this.asyncLoggingExecutor = Executors.newFixedThreadPool(
+                Runtime.getRuntime().availableProcessors(),
+                r -> {
+                    Thread t = new Thread(r, "async-outgoing-logging-" + System.currentTimeMillis());
+                    t.setDaemon(true);
+                    return t;
+                }
+            );
+        } else {
+            this.asyncLoggingExecutor = null;
+        }
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        if (asyncLoggingExecutor != null) {
+            asyncLoggingExecutor.shutdown();
+        }
     }
 
     @Override
@@ -167,13 +192,36 @@ public class OutgoingRequestLoggingInterceptor implements ClientHttpRequestInter
 
     /**
      * Logs the log entry as JSON.
+     * Uses async logging if enabled, otherwise synchronous.
      */
     private void logEntry(LogEntry logEntry) {
-        try {
-            String logMessage = objectMapper.writeValueAsString(logEntry);
-            logger.info("Outgoing Request/Response Log: {}", logMessage);
-        } catch (Exception e) {
-            logger.error("Error logging outgoing request/response", e);
+        if (properties.getLogging().isAsyncLogging() && asyncLoggingExecutor != null) {
+            // Capture MDC context for async logging
+            Map<String, String> mdcContext = MDC.getCopyOfContextMap();
+            
+            asyncLoggingExecutor.submit(() -> {
+                try {
+                    // Restore MDC context in async thread
+                    if (mdcContext != null) {
+                        MDC.setContextMap(mdcContext);
+                    }
+                    
+                    String logMessage = objectMapper.writeValueAsString(logEntry);
+                    logger.info("Outgoing Request/Response Log: {}", logMessage);
+                } catch (Exception e) {
+                    logger.error("Error logging outgoing request/response", e);
+                } finally {
+                    MDC.clear();
+                }
+            });
+        } else {
+            // Synchronous logging
+            try {
+                String logMessage = objectMapper.writeValueAsString(logEntry);
+                logger.info("Outgoing Request/Response Log: {}", logMessage);
+            } catch (Exception e) {
+                logger.error("Error logging outgoing request/response", e);
+            }
         }
     }
 }

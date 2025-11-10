@@ -3,8 +3,6 @@ package com.yourcompany.starter.filter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yourcompany.starter.config.EnterpriseStarterProperties;
 import jakarta.servlet.FilterChain;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -15,9 +13,11 @@ import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.web.util.ContentCachingRequestWrapper;
 import org.springframework.web.util.ContentCachingResponseWrapper;
 
-import java.io.IOException;
 import java.util.Collections;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -33,12 +33,10 @@ class RequestLoggingFilterTest {
     private FilterChain filterChain;
 
     private RequestLoggingFilter filter;
-    private EnterpriseStarterProperties.Logging loggingConfig;
 
     @BeforeEach
     void setUp() {
         properties = new EnterpriseStarterProperties();
-        loggingConfig = properties.getLogging();
         filter = new RequestLoggingFilter(properties, objectMapper);
     }
 
@@ -116,6 +114,58 @@ class RequestLoggingFilterTest {
         filter.doFilterInternal(request, response, filterChain);
         
         verify(filterChain).doFilter(any(), any());
+    }
+
+    @Test
+    void testDoFilterInternal_AsyncLoggingEnabled() throws Exception {
+        properties.getLogging().setEnabled(true);
+        properties.getLogging().setAsyncLogging(true);
+        properties.getLogging().setLogIncomingRequest(true);
+        properties.getLogging().setLogRequest(true);
+        properties.getLogging().setExcludedPaths(Collections.emptyList());
+        
+        // Create new filter instance with async logging enabled
+        RequestLoggingFilter asyncFilter = new RequestLoggingFilter(properties, objectMapper);
+        
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/test");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        
+        CountDownLatch latch = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            latch.countDown();
+            return null;
+        }).when(filterChain).doFilter(any(), any());
+        
+        asyncFilter.doFilterInternal(request, response, filterChain);
+        
+        // Verify filter chain was called (logging happens async, so it doesn't block)
+        assertTrue(latch.await(1, TimeUnit.SECONDS), "Filter chain should complete");
+        verify(filterChain).doFilter(any(), any());
+        
+        // Cleanup
+        asyncFilter.shutdown();
+    }
+
+    @Test
+    void testDoFilterInternal_AsyncLoggingDisabled() throws Exception {
+        properties.getLogging().setEnabled(true);
+        properties.getLogging().setAsyncLogging(false);
+        properties.getLogging().setLogIncomingRequest(true);
+        properties.getLogging().setLogRequest(true);
+        properties.getLogging().setExcludedPaths(Collections.emptyList());
+        
+        // Create new filter instance with async logging disabled
+        RequestLoggingFilter syncFilter = new RequestLoggingFilter(properties, objectMapper);
+        
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/test");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        
+        syncFilter.doFilterInternal(request, response, filterChain);
+        
+        verify(filterChain).doFilter(any(), any());
+        
+        // Cleanup
+        syncFilter.shutdown();
     }
 }
 

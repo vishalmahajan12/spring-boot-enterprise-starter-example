@@ -6,6 +6,8 @@ import java.util.Collection;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
@@ -23,6 +25,7 @@ import com.yourcompany.starter.model.LogEntry;
 import com.yourcompany.starter.util.CorrelationIdUtil;
 import com.yourcompany.starter.util.MaskingUtil;
 
+import jakarta.annotation.PreDestroy;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -48,10 +51,31 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
     private static final Logger logger = LoggerFactory.getLogger(RequestLoggingFilter.class);
     private final EnterpriseStarterProperties properties;
     private final ObjectMapper objectMapper;
+    private final ExecutorService asyncLoggingExecutor;
 
     public RequestLoggingFilter(EnterpriseStarterProperties properties, ObjectMapper objectMapper) {
         this.properties = properties;
         this.objectMapper = objectMapper;
+        // Create executor service for async logging if enabled
+        if (properties.getLogging().isAsyncLogging()) {
+            this.asyncLoggingExecutor = Executors.newFixedThreadPool(
+                Runtime.getRuntime().availableProcessors(),
+                r -> {
+                    Thread t = new Thread(r, "async-logging-" + System.currentTimeMillis());
+                    t.setDaemon(true);
+                    return t;
+                }
+            );
+        } else {
+            this.asyncLoggingExecutor = null;
+        }
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        if (asyncLoggingExecutor != null) {
+            asyncLoggingExecutor.shutdown();
+        }
     }
 
     @Override
@@ -293,13 +317,36 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
 
     /**
      * Logs the log entry as JSON.
+     * Uses async logging if enabled, otherwise synchronous.
      */
     private void logEntry(LogEntry logEntry) {
-        try {
-            String logMessage = objectMapper.writeValueAsString(logEntry);
-            logger.info("Request/Response Log: {}", logMessage);
-        } catch (Exception e) {
-            logger.error("Error logging request/response", e);
+        if (properties.getLogging().isAsyncLogging() && asyncLoggingExecutor != null) {
+            // Capture MDC context for async logging
+            Map<String, String> mdcContext = MDC.getCopyOfContextMap();
+            
+            asyncLoggingExecutor.submit(() -> {
+                try {
+                    // Restore MDC context in async thread
+                    if (mdcContext != null) {
+                        MDC.setContextMap(mdcContext);
+                    }
+                    
+                    String logMessage = objectMapper.writeValueAsString(logEntry);
+                    logger.info("Request/Response Log: {}", logMessage);
+                } catch (Exception e) {
+                    logger.error("Error logging request/response", e);
+                } finally {
+                    MDC.clear();
+                }
+            });
+        } else {
+            // Synchronous logging
+            try {
+                String logMessage = objectMapper.writeValueAsString(logEntry);
+                logger.info("Request/Response Log: {}", logMessage);
+            } catch (Exception e) {
+                logger.error("Error logging request/response", e);
+            }
         }
     }
 }

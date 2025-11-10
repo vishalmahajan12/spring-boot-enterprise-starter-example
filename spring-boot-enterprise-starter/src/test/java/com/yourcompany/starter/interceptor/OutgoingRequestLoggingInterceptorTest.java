@@ -16,7 +16,6 @@ import org.springframework.mock.http.client.MockClientHttpResponse;
 
 import java.io.IOException;
 import java.net.URI;
-import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -34,12 +33,10 @@ class OutgoingRequestLoggingInterceptorTest {
     private ClientHttpRequestExecution execution;
 
     private OutgoingRequestLoggingInterceptor interceptor;
-    private EnterpriseStarterProperties.Logging loggingConfig;
 
     @BeforeEach
     void setUp() throws IOException {
         properties = new EnterpriseStarterProperties();
-        loggingConfig = properties.getLogging();
         interceptor = new OutgoingRequestLoggingInterceptor(properties, objectMapper);
         
         // Create a simple mock response
@@ -109,6 +106,53 @@ class OutgoingRequestLoggingInterceptorTest {
         
         // Correlation ID should be added to request headers
         verify(execution).execute(any(), any());
+    }
+
+    @Test
+    void testIntercept_AsyncLoggingEnabled() throws IOException {
+        properties.getLogging().setEnabled(true);
+        properties.getLogging().setAsyncLogging(true);
+        properties.getLogging().setLogOutgoingRequest(true);
+        properties.getLogging().setLogIncomingResponse(true);
+        
+        // Create new interceptor instance with async logging enabled
+        OutgoingRequestLoggingInterceptor asyncInterceptor = 
+            new OutgoingRequestLoggingInterceptor(properties, objectMapper);
+        
+        HttpRequest request = new MockClientHttpRequest(HttpMethod.POST, URI.create("http://example.com/api/users"));
+        request.getHeaders().add("Content-Type", "application/json");
+        byte[] body = "{\"name\":\"test\"}".getBytes();
+        
+        ClientHttpResponse response = asyncInterceptor.intercept(request, body, execution);
+        
+        verify(execution).execute(any(), any());
+        assertNotNull(response);
+        
+        // Cleanup
+        asyncInterceptor.shutdown();
+    }
+
+    @Test
+    void testIntercept_AsyncLoggingDisabled() throws IOException {
+        properties.getLogging().setEnabled(true);
+        properties.getLogging().setAsyncLogging(false);
+        properties.getLogging().setLogOutgoingRequest(true);
+        properties.getLogging().setLogIncomingResponse(true);
+        
+        // Create new interceptor instance with async logging disabled
+        OutgoingRequestLoggingInterceptor syncInterceptor = 
+            new OutgoingRequestLoggingInterceptor(properties, objectMapper);
+        
+        HttpRequest request = new MockClientHttpRequest(HttpMethod.GET, URI.create("http://example.com/api"));
+        byte[] body = new byte[0];
+        
+        ClientHttpResponse response = syncInterceptor.intercept(request, body, execution);
+        
+        verify(execution).execute(any(), any());
+        assertNotNull(response);
+        
+        // Cleanup
+        syncInterceptor.shutdown();
     }
 }
 
