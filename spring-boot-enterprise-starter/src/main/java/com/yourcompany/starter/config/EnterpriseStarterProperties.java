@@ -1,11 +1,11 @@
 package com.yourcompany.starter.config;
 
-import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.validation.annotation.Validated;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.validation.annotation.Validated;
 
 /**
  * Main configuration properties class for Enterprise Starter.
@@ -244,8 +244,6 @@ public class EnterpriseStarterProperties {
         private long slowQueryThresholdMs = 1000;
         private boolean enableErrorTracking = true;
         private List<String> customHealthIndicators = new ArrayList<>();
-        private boolean exposePrometheus = true;
-        private String metricsPath = "/actuator/prometheus";
 
         // Getters and Setters
         public boolean isEnabled() { return enabled; }
@@ -264,10 +262,6 @@ public class EnterpriseStarterProperties {
         public void setEnableErrorTracking(boolean enableErrorTracking) { this.enableErrorTracking = enableErrorTracking; }
         public List<String> getCustomHealthIndicators() { return customHealthIndicators; }
         public void setCustomHealthIndicators(List<String> customHealthIndicators) { this.customHealthIndicators = customHealthIndicators; }
-        public boolean isExposePrometheus() { return exposePrometheus; }
-        public void setExposePrometheus(boolean exposePrometheus) { this.exposePrometheus = exposePrometheus; }
-        public String getMetricsPath() { return metricsPath; }
-        public void setMetricsPath(String metricsPath) { this.metricsPath = metricsPath; }
     }
 
     /**

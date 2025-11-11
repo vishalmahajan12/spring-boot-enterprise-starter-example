@@ -106,8 +106,6 @@ enterprise:
       slow-query-threshold-ms: 1000
       enable-error-tracking: true
       custom-health-indicators: []
-      expose-prometheus: true
-      metrics-path: "/actuator/prometheus"
 
     # Resilience Configuration (Circuit Breaker & Retry)
     resilience:

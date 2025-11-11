@@ -121,12 +121,6 @@
       "type": "java.lang.Boolean",
       "defaultValue": true,
       "description": "Enable Micrometer metrics"
-    },
-    {
-      "name": "enterprise.starter.monitoring.expose-prometheus",
-      "type": "java.lang.Boolean",
-      "defaultValue": true,
-      "description": "Expose Prometheus metrics endpoint"
     }
   ]
 }

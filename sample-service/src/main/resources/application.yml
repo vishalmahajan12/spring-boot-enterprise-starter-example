@@ -114,8 +114,6 @@ enterprise:
       enable-slow-query-detection: true
       slow-query-threshold-ms: 1000
       enable-error-tracking: true
-      expose-prometheus: true
-      metrics-path: "/actuator/prometheus"
 
     # Resilience Configuration
     resilience:
