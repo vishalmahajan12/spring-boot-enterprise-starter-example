@@ -3,6 +3,8 @@ package com.yourcompany.sample.controller;
 import com.yourcompany.sample.service.CachedDataService;
 import com.yourcompany.sample.service.ExternalServiceClient;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.CacheManager;
+import org.springframework.context.ApplicationContext;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -21,6 +23,9 @@ public class DemoController {
     
     @Autowired
     private CachedDataService cachedDataService;
+    
+    @Autowired
+    private ApplicationContext applicationContext;
 
     @GetMapping("/logging")
     public ResponseEntity<Map<String, Object>> testLogging(
@@ -188,6 +193,83 @@ public class DemoController {
         response.put("comparison", "Compare with /api/demo/cache/config to see caching benefits");
         
         return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/cache/diagnostics")
+    public ResponseEntity<Map<String, Object>> cacheDiagnostics() {
+        Map<String, Object> diagnostics = new HashMap<>();
+        
+        try {
+            CacheManager cacheManager = applicationContext.getBean(CacheManager.class);
+            
+            if (cacheManager != null) {
+                diagnostics.put("cacheManagerType", cacheManager.getClass().getName());
+                diagnostics.put("cacheNames", cacheManager.getCacheNames());
+                
+                // Check if it's our MultiLevelCacheManager
+                if (cacheManager instanceof com.yourcompany.starter.cache.MultiLevelCacheManager) {
+                    diagnostics.put("isMultiLevel", true);
+                    diagnostics.put("note", "Multi-level cache manager is active (L1 + L2)");
+                } else {
+                    diagnostics.put("isMultiLevel", false);
+                    diagnostics.put("note", "Single-level cache manager (L1 only)");
+                }
+                
+                // Check if RedisCacheConfig is loaded
+                try {
+                    Object redisCacheConfig = applicationContext.getBean("redisCacheConfig");
+                    diagnostics.put("redisCacheConfigExists", true);
+                    diagnostics.put("redisCacheConfigType", redisCacheConfig.getClass().getName());
+                } catch (Exception e) {
+                    diagnostics.put("redisCacheConfigExists", false);
+                    diagnostics.put("redisCacheConfigError", "Bean not found: " + e.getMessage());
+                }
+                
+                // Check for RedisConnectionFactory bean
+                try {
+                    Object redisConnectionFactory = applicationContext.getBean("redisConnectionFactory");
+                    diagnostics.put("redisConnectionFactoryExists", true);
+                    diagnostics.put("redisConnectionFactoryType", redisConnectionFactory.getClass().getName());
+                } catch (Exception e) {
+                    diagnostics.put("redisConnectionFactoryExists", false);
+                    diagnostics.put("redisConnectionFactoryError", "Bean not found: " + e.getMessage());
+                }
+                
+                // Check for Redis cache manager bean
+                try {
+                    CacheManager redisCacheManager = applicationContext.getBean("redisCacheManager", CacheManager.class);
+                    diagnostics.put("redisCacheManagerExists", true);
+                    diagnostics.put("redisCacheManagerType", redisCacheManager.getClass().getName());
+                } catch (Exception e) {
+                    diagnostics.put("redisCacheManagerExists", false);
+                    diagnostics.put("redisCacheManagerError", "Bean not found: " + e.getMessage());
+                }
+                
+                // Check for Caffeine cache manager bean
+                try {
+                    CacheManager caffeineCacheManager = applicationContext.getBean("caffeineCacheManager", CacheManager.class);
+                    diagnostics.put("caffeineCacheManagerExists", true);
+                    diagnostics.put("caffeineCacheManagerType", caffeineCacheManager.getClass().getName());
+                } catch (Exception e) {
+                    diagnostics.put("caffeineCacheManagerExists", false);
+                }
+            } else {
+                diagnostics.put("error", "No cache manager found");
+            }
+        } catch (Exception e) {
+            diagnostics.put("error", e.getMessage());
+            diagnostics.put("exception", e.getClass().getName());
+            diagnostics.put("stackTrace", getStackTrace(e));
+        }
+        
+        return ResponseEntity.ok(diagnostics);
+    }
+    
+    private String getStackTrace(Exception e) {
+        java.io.StringWriter sw = new java.io.StringWriter();
+        java.io.PrintWriter pw = new java.io.PrintWriter(sw);
+        e.printStackTrace(pw);
+        return sw.toString();
     }
 }
 

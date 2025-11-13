@@ -6,7 +6,6 @@ import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.cache.caffeine.CaffeineCacheManager;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Primary;
 
 import com.github.benmanes.caffeine.cache.CaffeineSpec;
 
@@ -40,11 +39,10 @@ public class CacheConfig {
     }
 
     /**
-     * L1 Cache Manager (Caffeine) - Primary, fast local cache.
-     * Always created when caching is enabled.
+     * L1 Cache Manager (Caffeine) - Always created when caching is enabled.
+     * Used directly when Redis is not available, or as part of compositeCacheManager when Redis is available.
      */
     @Bean
-    @Primary
     public CacheManager caffeineCacheManager() {
         CaffeineCacheManager cacheManager = new CaffeineCacheManager();
         EnterpriseStarterProperties.Cache cacheConfig = properties.getCache();

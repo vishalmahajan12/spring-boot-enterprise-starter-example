@@ -3,6 +3,12 @@ spring:
     name: sample-service
   cache:
     type: none  # Set to none when using CompositeCacheManager
+  # Redis Configuration (if using Redis)
+  data:
+    redis:
+      host: 172.17.0.4
+      port: 6379
+      timeout: 2000ms
 
 server:
   port: 8080
@@ -127,7 +133,7 @@ enterprise:
       caffeine-ttl-seconds: 300  # 5 minutes
       caffeine-access-expiration-seconds: 180  # 3 minutes
       # Redis (L2) Configuration - Distributed cache (optional)
-      redis-enabled: false  # Set to true if Redis is available
+      redis-enabled: true  # Set to true if Redis is available
       redis-ttl-seconds: 3600  # 1 hour
       cache-names:
         - default

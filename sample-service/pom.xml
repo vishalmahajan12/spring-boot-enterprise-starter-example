@@ -55,6 +55,12 @@
             <version>2.1.0</version>
         </dependency>
 
+        <!-- Redis Cache (L2 - Distributed) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+
         <!-- Testing -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
