@@ -8,7 +8,7 @@ spring:
     redis:
       host: 172.17.0.4
       port: 6379
-      timeout: 2000ms
+      timeout: 500ms  # Reduced from 2000ms for faster failure detection (circuit breaker handles resilience)
 
 server:
   port: 8080

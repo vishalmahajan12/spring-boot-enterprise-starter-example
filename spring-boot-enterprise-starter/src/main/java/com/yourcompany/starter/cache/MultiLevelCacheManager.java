@@ -21,10 +21,12 @@ import org.springframework.cache.CacheManager;
  * - Writes to BOTH L1 and L2 on cache miss (write-through)
  * - Evicts from BOTH L1 and L2 on eviction
  * - Handles L2 (Redis) failures gracefully, falling back to L1 only
+ * - Uses circuit breaker pattern to fast-fail when Redis is down
  * 
  * This ensures that Redis (L2) is properly populated and can be shared across instances.
  * If Redis becomes unavailable, the cache continues to work with L1 (Caffeine) only,
- * providing resilience and fault tolerance.
+ * providing resilience and fault tolerance. The circuit breaker prevents slow requests
+ * by skipping Redis after detecting failures.
  */
 public class MultiLevelCacheManager implements CacheManager {
 
@@ -34,6 +36,7 @@ public class MultiLevelCacheManager implements CacheManager {
     private final CacheManager l2CacheManager;  // Redis (distributed)
     private final ConcurrentMap<String, Cache> cacheMap = new ConcurrentHashMap<>();
     private final Set<String> cacheNames = new LinkedHashSet<>();
+    private final CircuitBreaker l2CircuitBreaker = new CircuitBreaker();
 
     public MultiLevelCacheManager(CacheManager l1CacheManager, CacheManager l2CacheManager) {
         if (l1CacheManager == null && l2CacheManager == null) {
@@ -79,9 +82,71 @@ public class MultiLevelCacheManager implements CacheManager {
     }
 
     /**
+     * Circuit breaker to prevent slow requests when Redis is down.
+     * After N consecutive failures, skips Redis for a period of time.
+     */
+    private class CircuitBreaker {
+        private volatile boolean isOpen = false;
+        private volatile long lastFailureTime = 0;
+        private volatile int failureCount = 0;
+        private static final int FAILURE_THRESHOLD = 5;
+        private static final long CIRCUIT_OPEN_DURATION_MS = 30000; // 30 seconds
+        
+        /**
+         * Returns true if we should attempt to use L2 cache (Redis).
+         * Returns false if circuit is open (Redis is down).
+         */
+        boolean shouldAttempt() {
+            if (!isOpen) {
+                return true;
+            }
+            // Check if we should try again (half-open state after timeout)
+            if (System.currentTimeMillis() - lastFailureTime > CIRCUIT_OPEN_DURATION_MS) {
+                isOpen = false;
+                failureCount = 0;
+                logger.info("Circuit breaker: Attempting to reconnect to Redis (half-open state)");
+                return true;
+            }
+            return false;
+        }
+        
+        /**
+         * Records a successful operation, resetting the circuit breaker.
+         */
+        void recordSuccess() {
+            if (isOpen || failureCount > 0) {
+                logger.info("Circuit breaker: Redis is healthy again. Resetting circuit breaker.");
+            }
+            isOpen = false;
+            failureCount = 0;
+        }
+        
+        /**
+         * Records a failure. Opens circuit after threshold is reached.
+         */
+        void recordFailure() {
+            failureCount++;
+            lastFailureTime = System.currentTimeMillis();
+            if (failureCount >= FAILURE_THRESHOLD && !isOpen) {
+                isOpen = true;
+                logger.warn("Circuit breaker: OPENED after {} failures. Skipping Redis for {} seconds.", 
+                        failureCount, CIRCUIT_OPEN_DURATION_MS / 1000);
+            }
+        }
+        
+        boolean isOpen() {
+            return isOpen;
+        }
+        
+        int getFailureCount() {
+            return failureCount;
+        }
+    }
+
+    /**
      * Multi-level cache wrapper that coordinates between L1 and L2.
      */
-    private static class MultiLevelCache implements Cache {
+    private class MultiLevelCache implements Cache {
         private final String name;
         private final Cache l1Cache;
         private final Cache l2Cache;
@@ -113,21 +178,35 @@ public class MultiLevelCacheManager implements CacheManager {
                 }
             }
             
-            // Check L2 (Redis) - handle failures gracefully
-            if (l2Cache != null) {
+            // Check L2 (Redis) - only if circuit breaker allows (fast-fail when Redis is down)
+            if (l2Cache != null && l2CircuitBreaker.shouldAttempt()) {
                 try {
                     ValueWrapper wrapper = l2Cache.get(key);
                     if (wrapper != null) {
+                        l2CircuitBreaker.recordSuccess(); // Reset on success
                         // Populate L1 from L2 (cache promotion)
                         if (l1Cache != null) {
                             l1Cache.put(key, wrapper.get());
                         }
                         return wrapper;
                     }
+                    // Cache miss is not a failure - only record success if we got a value
+                    if (l2CircuitBreaker.isOpen()) {
+                        l2CircuitBreaker.recordSuccess(); // Successful connection even if miss
+                    }
                 } catch (Exception e) {
-                    logger.warn("Error reading from L2 cache (Redis) for key '{}' in cache '{}': {}. " +
-                            "Falling back to L1 only.", key, name, e.getMessage());
+                    l2CircuitBreaker.recordFailure(); // Track failure
+                    if (l2CircuitBreaker.isOpen()) {
+                        logger.debug("Skipping L2 cache (Redis) - circuit breaker is OPEN for cache '{}'", name);
+                    } else {
+                        logger.warn("Error reading from L2 cache (Redis) for key '{}' in cache '{}': {}. " +
+                                "Failure count: {}/{}", key, name, e.getMessage(), 
+                                l2CircuitBreaker.getFailureCount(), CircuitBreaker.FAILURE_THRESHOLD);
+                    }
                 }
+            } else if (l2Cache != null && !l2CircuitBreaker.shouldAttempt()) {
+                // Circuit is open - skip Redis entirely (fast path, no delay)
+                logger.trace("Skipping L2 cache (Redis) - circuit breaker is OPEN for cache '{}'", name);
             }
             
             return null;
@@ -143,20 +222,29 @@ public class MultiLevelCacheManager implements CacheManager {
                 }
             }
             
-            // Check L2 - handle failures gracefully
-            if (l2Cache != null) {
+            // Check L2 - only if circuit breaker allows (fast-fail when Redis is down)
+            if (l2Cache != null && l2CircuitBreaker.shouldAttempt()) {
                 try {
                     T value = l2Cache.get(key, type);
                     if (value != null) {
+                        l2CircuitBreaker.recordSuccess(); // Reset on success
                         // Populate L1 from L2
                         if (l1Cache != null) {
                             l1Cache.put(key, value);
                         }
                         return value;
                     }
+                    // Cache miss is not a failure
+                    if (l2CircuitBreaker.isOpen()) {
+                        l2CircuitBreaker.recordSuccess(); // Successful connection even if miss
+                    }
                 } catch (Exception e) {
-                    logger.warn("Error reading from L2 cache (Redis) for key '{}' in cache '{}': {}. " +
-                            "Falling back to L1 only.", key, name, e.getMessage());
+                    l2CircuitBreaker.recordFailure(); // Track failure
+                    if (!l2CircuitBreaker.isOpen()) {
+                        logger.warn("Error reading from L2 cache (Redis) for key '{}' in cache '{}': {}. " +
+                                "Failure count: {}/{}", key, name, e.getMessage(),
+                                l2CircuitBreaker.getFailureCount(), CircuitBreaker.FAILURE_THRESHOLD);
+                    }
                 }
             }
             
@@ -179,11 +267,12 @@ public class MultiLevelCacheManager implements CacheManager {
                 }
             }
             
-            // Check L2 - handle failures gracefully
-            if (l2Cache != null) {
+            // Check L2 - only if circuit breaker allows (fast-fail when Redis is down)
+            if (l2Cache != null && l2CircuitBreaker.shouldAttempt()) {
                 try {
                     ValueWrapper wrapper = l2Cache.get(key);
                     if (wrapper != null) {
+                        l2CircuitBreaker.recordSuccess(); // Reset on success
                         @SuppressWarnings("unchecked")
                         T value = (T) wrapper.get();
                         // Populate L1 from L2
@@ -192,9 +281,17 @@ public class MultiLevelCacheManager implements CacheManager {
                         }
                         return value;
                     }
+                    // Cache miss is not a failure
+                    if (l2CircuitBreaker.isOpen()) {
+                        l2CircuitBreaker.recordSuccess(); // Successful connection even if miss
+                    }
                 } catch (Exception e) {
-                    logger.warn("Error reading from L2 cache (Redis) for key '{}' in cache '{}': {}. " +
-                            "Falling back to L1 only.", key, name, e.getMessage());
+                    l2CircuitBreaker.recordFailure(); // Track failure
+                    if (!l2CircuitBreaker.isOpen()) {
+                        logger.warn("Error reading from L2 cache (Redis) for key '{}' in cache '{}': {}. " +
+                                "Failure count: {}/{}", key, name, e.getMessage(),
+                                l2CircuitBreaker.getFailureCount(), CircuitBreaker.FAILURE_THRESHOLD);
+                    }
                 }
             }
             
@@ -219,13 +316,19 @@ public class MultiLevelCacheManager implements CacheManager {
                 l1Cache.put(key, value);
             }
             
-            // Write to L2 (handle failures gracefully)
-            if (l2Cache != null) {
+            // Write to L2 - only if circuit breaker allows (fast-fail when Redis is down)
+            if (l2Cache != null && l2CircuitBreaker.shouldAttempt()) {
                 try {
                     l2Cache.put(key, value);
+                    l2CircuitBreaker.recordSuccess(); // Reset on success
                 } catch (Exception e) {
-                    logger.warn("Error writing to L2 cache (Redis) for key '{}' in cache '{}': {}. " +
-                            "Value stored in L1 only.", key, name, e.getMessage());
+                    l2CircuitBreaker.recordFailure(); // Track failure
+                    if (!l2CircuitBreaker.isOpen()) {
+                        logger.warn("Error writing to L2 cache (Redis) for key '{}' in cache '{}': {}. " +
+                                "Value stored in L1 only. Failure count: {}/{}", 
+                                key, name, e.getMessage(), l2CircuitBreaker.getFailureCount(), 
+                                CircuitBreaker.FAILURE_THRESHOLD);
+                    }
                 }
             }
         }
@@ -237,13 +340,19 @@ public class MultiLevelCacheManager implements CacheManager {
                 l1Cache.evict(key);
             }
             
-            // Evict from L2 (handle failures gracefully)
-            if (l2Cache != null) {
+            // Evict from L2 - only if circuit breaker allows (fast-fail when Redis is down)
+            if (l2Cache != null && l2CircuitBreaker.shouldAttempt()) {
                 try {
                     l2Cache.evict(key);
+                    l2CircuitBreaker.recordSuccess(); // Reset on success
                 } catch (Exception e) {
-                    logger.warn("Error evicting from L2 cache (Redis) for key '{}' in cache '{}': {}. " +
-                            "Key evicted from L1 only.", key, name, e.getMessage());
+                    l2CircuitBreaker.recordFailure(); // Track failure
+                    if (!l2CircuitBreaker.isOpen()) {
+                        logger.warn("Error evicting from L2 cache (Redis) for key '{}' in cache '{}': {}. " +
+                                "Key evicted from L1 only. Failure count: {}/{}", 
+                                key, name, e.getMessage(), l2CircuitBreaker.getFailureCount(),
+                                CircuitBreaker.FAILURE_THRESHOLD);
+                    }
                 }
             }
         }
@@ -255,13 +364,19 @@ public class MultiLevelCacheManager implements CacheManager {
                 l1Cache.clear();
             }
             
-            // Clear L2 (handle failures gracefully)
-            if (l2Cache != null) {
+            // Clear L2 - only if circuit breaker allows (fast-fail when Redis is down)
+            if (l2Cache != null && l2CircuitBreaker.shouldAttempt()) {
                 try {
                     l2Cache.clear();
+                    l2CircuitBreaker.recordSuccess(); // Reset on success
                 } catch (Exception e) {
-                    logger.warn("Error clearing L2 cache (Redis) for cache '{}': {}. " +
-                            "L1 cache cleared only.", name, e.getMessage());
+                    l2CircuitBreaker.recordFailure(); // Track failure
+                    if (!l2CircuitBreaker.isOpen()) {
+                        logger.warn("Error clearing L2 cache (Redis) for cache '{}': {}. " +
+                                "L1 cache cleared only. Failure count: {}/{}", 
+                                name, e.getMessage(), l2CircuitBreaker.getFailureCount(),
+                                CircuitBreaker.FAILURE_THRESHOLD);
+                    }
                 }
             }
         }
